@@ -1,0 +1,112 @@
+from mpi4py import MPI
+import numpy as np
+import math
+import cv2
+
+# Algorithm Number 1: 
+# calculate_pixel_differences
+# Function to calculate the sum of differences between two pixels
+def algorithm_1(pixel1, pixel2):
+    # print(f"Pixel Difference X={pixel1}, Y:{pixel2}, Diff={np.int64(pixel1 - pixel2)**2}")
+    return np.int64(pixel1 - pixel2)**2
+
+# Algorithm Number 2:
+# Calculate the sum of differences 1-D array
+
+def algorithm_2(X, Y):
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Determine the chunk size for each process
+    chunk_size = len(X) // size
+
+    # Divide the data into chunks and scatter them across the processes
+    x_chunk = np.empty(chunk_size, dtype=np.uint8)
+    y_chunk = np.empty(chunk_size, dtype=np.uint8)
+    comm.Scatter(X, x_chunk, root=0)
+    comm.Scatter(Y, y_chunk, root=0)
+
+    # Calculate the sum of differences for the local data chunk
+    local_sum_of_diffs = np.int64(0)
+    for i in range(chunk_size):
+        local_sum_of_diffs += algorithm_1(x_chunk[i], y_chunk[i])
+
+    # Reduce the local sum of differences to get the global sum
+    sum_of_diffs = comm.reduce(local_sum_of_diffs, op=MPI.SUM, root=0)
+
+    # Compute the Euclidean distance
+    ed = np.sqrt(sum_of_diffs)
+
+    return ed
+
+# Algorithm Number 3:
+# Calculate the sum of differences 2-D array
+# Function to calculate the local sum of differences using Algorithm 2
+def algorithm_3(x_chunk, y_chunk, start_index, end_index):
+    local_sum_of_diffs = 0
+    for i in range(start_index, end_index):
+        for j in range(len(x_chunk[i])):
+            local_sum_of_diffs += algorithm_1(x_chunk[i][j], y_chunk[i][j])
+    return local_sum_of_diffs
+
+# Function to calculate the global sum of differences using MPI
+def compare_images_mpi(X, Y):
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Calculate the chunk size and the number of chunks
+    num_chunks = size
+    chunk_size = math.ceil(len(X) / num_chunks)
+
+    # Scatter the data
+    x_chunk = np.empty((chunk_size, len(X[0])), dtype=np.uint8)
+    y_chunk = np.empty((chunk_size, len(X[0])), dtype=np.uint8)
+    comm.Scatter(X, x_chunk, root=0)
+    comm.Scatter(Y, y_chunk, root=0)
+
+    start_index = 0
+    end_index = len(x_chunk)
+    local_sum_of_diffs = algorithm_3(x_chunk, y_chunk, start_index, end_index)
+
+    # Reduce
+    global_sum_of_diffs = comm.reduce(local_sum_of_diffs, op=MPI.SUM, root=0)
+
+    # Final calculation of Euclidean Distance
+    if rank == 0:
+        global_sum_of_diffs = math.sqrt(global_sum_of_diffs)
+        return global_sum_of_diffs
+    
+# Algorithm Number 4:
+# Read the images using OpenCV & return 2-D Array
+    
+def algorithm_4(image1_path, image2_path):
+    # Read the images using OpenCV
+    image1 = cv2.imread(image1_path, cv2.IMREAD_GRAYSCALE)
+    image2 = cv2.imread(image2_path, cv2.IMREAD_GRAYSCALE)
+
+    # Convert the images to numpy arrays
+    image1_array = np.array(image1)
+    image2_array = np.array(image2)
+    print(image1_array)
+
+    return image1_array, image2_array
+
+# Algorithm Number 5:
+# Percentage Distance Value
+def algorithm_5(ed,N,M):
+    return ed/(N*M)
+
+if __name__ == '__main__':
+     # Read the two images
+    X,Y = algorithm_4("D:\\fiverr work\\Hamzabinyahya\\Images\\a.png","D:\\fiverr work\\Hamzabinyahya\\Images\\b.png")
+    print(X.shape,"  ",Y.shape)   
+    width=X.shape[0]
+    height=X.shape[1]
+    print("Width=",width)
+    print("Height=",height) 
+    ed = compare_images_mpi(X, Y)
+    print("Euclidean Distance:", ed)
+    percentageValue=algorithm_5(ed,width,height)
+    print("Percentage Distance Value =",percentageValue*100)
